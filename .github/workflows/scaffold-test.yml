@@ -69,3 +69,12 @@ jobs:
       - name: Verify the scaffolded project compiles
         id: verify_the_scaffolded_project_compiles
         run: cd "$SCAFFOLD_DIR" && ./node_modules/.bin/jsii --silence-warnings=reserved-word
+      - name: Verify the resolved aws-cdk-lib version satisfies the cdk-nag floor
+        id: verify_the_resolved_aws-cdk-lib_version_satisfies_the_cdk-nag_floor
+        run: |-
+          cd "$SCAFFOLD_DIR"
+          RESOLVED=$(node -p "require('./node_modules/aws-cdk-lib/package.json').version")
+          FLOOR=2.257.0
+          echo "Resolved aws-cdk-lib: $RESOLVED (floor: $FLOOR)"
+          LOWEST=$(printf "%s\n%s\n" "$RESOLVED" "$FLOOR" | sort -V | head -1)
+          if [ "$LOWEST" != "$FLOOR" ]; then echo "aws-cdk-lib $RESOLVED is below the cdk-nag floor $FLOOR - DEFAULT_CDK_VERSION or UPSTREAM_DEFAULT_CDK_VERSION in src/projects/cdk-construct.ts has likely drifted" >&2; exit 1; fi

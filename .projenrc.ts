@@ -236,6 +236,8 @@ interface SelfUpgradeWorkflowOptions {
   readonly checkRun: string[];
   /** Overrides the "Check for a newer X version" step name, e.g. to note a version cap. */
   readonly checkName?: string;
+  /** Overrides the "Bump XVersion and re-synth" step name, e.g. when `name` already ends in a version-like word. */
+  readonly bumpName?: string;
   /** `sed` command that bumps the version literal in .projenrc.ts to $NEW_VERSION. */
   readonly bumpSed: string;
 }
@@ -273,7 +275,7 @@ function addSelfUpgradeWorkflow(opts: SelfUpgradeWorkflowOptions) {
         run: opts.checkRun.join('\n'),
       },
       {
-        name: `Bump ${opts.name}Version and re-synth`,
+        name: opts.bumpName ?? `Bump ${opts.name}Version and re-synth`,
         if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
         env: {
           NEW_VERSION: '${{ steps.check.outputs.latest }}',
@@ -340,6 +342,59 @@ addSelfUpgradeWorkflow({
   ],
   bumpSed:
     'sed -i "s/const jsiiVersion = \'~.*\';/const jsiiVersion = \'~${NEW_VERSION}\';/" .projenrc.ts',
+});
+
+// The *_VERSION constants in src/projects/cdk-construct.ts control what
+// every project scaffolded by MvcCdkConstructLibrary gets by default -
+// keep them current the same way, via addSelfUpgradeWorkflow, so new
+// scaffolds pick up recent versions without a human re-checking npm by
+// hand. scaffold-test.yml (below) exercises DEFAULT_CDK_VERSION on every
+// run already (its fixture deliberately omits cdkVersion) and asserts the
+// resolved aws-cdk-lib satisfies cdk-nag's floor, so a bad bump here (or a
+// silently-stale UPSTREAM_DEFAULT_CDK_VERSION letting the substitution
+// stop firing) fails that workflow before merge.
+const CDK_CONSTRUCT_FILE = 'src/projects/cdk-construct.ts';
+
+addSelfUpgradeWorkflow({
+  name: 'integ-runner',
+  bumpName: 'Bump LAST_INTEG_RUNNER_VERSION and re-synth',
+  checkRun: [
+    `current=$(grep -oP "const LAST_INTEG_RUNNER_VERSION = '\\K[^']+" ${CDK_CONSTRUCT_FILE})`,
+    'latest=$(npm view "@aws-cdk/integ-runner" versions --json | jq -r ".[-1]")',
+    'echo "current=$current" >> "$GITHUB_OUTPUT"',
+    'echo "latest=$latest" >> "$GITHUB_OUTPUT"',
+  ],
+  bumpSed:
+    `sed -i "s/const LAST_INTEG_RUNNER_VERSION = '.*';/const LAST_INTEG_RUNNER_VERSION = '\${NEW_VERSION}';/" ${CDK_CONSTRUCT_FILE}`,
+});
+
+addSelfUpgradeWorkflow({
+  name: 'default-cdk-version',
+  checkName: 'Check for a newer default aws-cdk-lib version',
+  bumpName: 'Bump DEFAULT_CDK_VERSION and re-synth',
+  checkRun: [
+    `current=$(grep -oP "const DEFAULT_CDK_VERSION = '\\K[^']+" ${CDK_CONSTRUCT_FILE})`,
+    'latest=$(npm view aws-cdk-lib version)',
+    'echo "current=$current" >> "$GITHUB_OUTPUT"',
+    'echo "latest=$latest" >> "$GITHUB_OUTPUT"',
+  ],
+  bumpSed:
+    `sed -i "s/const DEFAULT_CDK_VERSION = '.*';/const DEFAULT_CDK_VERSION = '\${NEW_VERSION}';/" ${CDK_CONSTRUCT_FILE}`,
+});
+
+addSelfUpgradeWorkflow({
+  name: 'upstream-cdk-default',
+  checkName: "Check for drift in AwsCdkConstructLibraryOptions' own cdkVersion default",
+  bumpName: 'Bump UPSTREAM_DEFAULT_CDK_VERSION and re-synth',
+  checkRun: [
+    `current=$(grep -oP "const UPSTREAM_DEFAULT_CDK_VERSION = '\\K[^']+" ${CDK_CONSTRUCT_FILE})`,
+    // node_modules/projen already exists - the "Install dependencies" step above installed it.
+    'latest=$(grep -B3 "readonly cdkVersion: string;" node_modules/projen/lib/awscdk/awscdk-deps.d.ts | grep -oP \'@default "\\K[^"]+\' | head -1)',
+    'echo "current=$current" >> "$GITHUB_OUTPUT"',
+    'echo "latest=$latest" >> "$GITHUB_OUTPUT"',
+  ],
+  bumpSed:
+    `sed -i "s/const UPSTREAM_DEFAULT_CDK_VERSION = '.*';/const UPSTREAM_DEFAULT_CDK_VERSION = '\${NEW_VERSION}';/" ${CDK_CONSTRUCT_FILE}`,
 });
 
 // End-to-end regression test for MvcCdkConstructLibrary itself: pack this
@@ -444,6 +499,25 @@ scaffoldTest?.addJob('scaffold', {
       // differently between runs and disagrees on how to handle the
       // "@mavogel/mvc-projen" file: dependency this setup leaves behind.
       run: 'cd "$SCAFFOLD_DIR" && ./node_modules/.bin/jsii --silence-warnings=reserved-word',
+    },
+    {
+      // Guards DEFAULT_CDK_VERSION/UPSTREAM_DEFAULT_CDK_VERSION in
+      // cdk-construct.ts: this fixture deliberately omits cdkVersion, so
+      // the resolved aws-cdk-lib version here is whatever those two
+      // constants actually produce. If UPSTREAM_DEFAULT_CDK_VERSION goes
+      // stale (projen upgrades its own default), the substitution silently
+      // stops firing and cdkVersion falls back to that now-different
+      // upstream default - which can again be below cdk-nag's required
+      // floor, reintroducing the original ERESOLVE bug silently.
+      name: 'Verify the resolved aws-cdk-lib version satisfies the cdk-nag floor',
+      run: [
+        'cd "$SCAFFOLD_DIR"',
+        'RESOLVED=$(node -p "require(\'./node_modules/aws-cdk-lib/package.json\').version")',
+        'FLOOR=2.257.0',
+        'echo "Resolved aws-cdk-lib: $RESOLVED (floor: $FLOOR)"',
+        'LOWEST=$(printf "%s\\n%s\\n" "$RESOLVED" "$FLOOR" | sort -V | head -1)',
+        'if [ "$LOWEST" != "$FLOOR" ]; then echo "aws-cdk-lib $RESOLVED is below the cdk-nag floor $FLOOR - DEFAULT_CDK_VERSION or UPSTREAM_DEFAULT_CDK_VERSION in src/projects/cdk-construct.ts has likely drifted" >&2; exit 1; fi',
+      ].join('\n'),
     },
   ],
 });
