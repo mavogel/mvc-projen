@@ -391,6 +391,13 @@ scaffoldTest?.addJob('scaffold', {
     },
     {
       name: 'Scaffold a throwaway project from the packed tarball',
+      env: {
+        // With CI=true (GitHub Actions' default), projen picks `npm ci`
+        // for the scaffolded project's own postSynthesize install - but
+        // it's a brand-new project with no package-lock.json yet, so `npm
+        // ci` can't work. Same fix as upgrade-projen.yml's CI=false note.
+        CI: 'false',
+      },
       run: [
         'set -euo pipefail',
         'TARBALL="$(pwd)/$(ls dist/js/*.tgz)"',

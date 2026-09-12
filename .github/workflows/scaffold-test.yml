@@ -30,6 +30,8 @@ jobs:
         run: npm run compile && npm run package:js
       - name: Scaffold a throwaway project from the packed tarball
         id: scaffold_a_throwaway_project_from_the_packed_tarball
+        env:
+          CI: "false"
         run: |-
           set -euo pipefail
           TARBALL="$(pwd)/$(ls dist/js/*.tgz)"
