@@ -222,174 +222,124 @@ project.tsconfig?.file.addOverride('compilerOptions.types', ['node']);
 // list: ^24.0.0, ^22.0.0, ^20.0.0 [deprecated]).
 new TextFile(project, '.nvmrc', { lines: ['24'] });
 
-// `projenVersion` above is a hardcoded literal, so it's excluded from the
-// Dependabot group (see `dependabotOptions.groups.default.excludePatterns`):
-// a Dependabot-only bump of `package.json`'s `projen` entry would just get
-// reverted by the self-mutation check in build.yml on the next `npx projen`
-// run, since that literal is the source of truth. This workflow bumps the
-// literal itself, re-synths, verifies the build, and opens a PR.
-const upgradeProjen = project.github?.addWorkflow('upgrade-projen');
-upgradeProjen?.on({
-  schedule: [{ cron: '0 6 * * 1' }],
-  workflowDispatch: {},
-});
-upgradeProjen?.addJob('upgrade', {
-  runsOn: ['ubuntu-latest'],
-  permissions: {
-    contents: workflows.JobPermission.WRITE,
-    pullRequests: workflows.JobPermission.WRITE,
-  },
-  steps: [
-    {
-      name: 'Checkout',
-      uses: 'actions/checkout@v6',
-      with: { token: '${{ secrets.PROJEN_GITHUB_TOKEN }}' },
+// Both `projenVersion` and `jsiiVersion` above are hardcoded literals
+// excluded from the Dependabot group (see
+// `dependabotOptions.groups.default.excludePatterns`/`ignore`): a
+// Dependabot-only bump of their package.json entry would just get reverted
+// by the self-mutation check in build.yml on the next `npx projen` run,
+// since the literal is the source of truth. Each workflow below bumps its
+// literal directly, re-synths, verifies the build, and opens a PR.
+interface SelfUpgradeWorkflowOptions {
+  /** The dependency name, e.g. 'projen' or 'jsii' - drives the workflow/branch/commit names. */
+  readonly name: string;
+  /** Shell lines that set the `current` and `latest` $GITHUB_OUTPUT values. */
+  readonly checkRun: string[];
+  /** Overrides the "Check for a newer X version" step name, e.g. to note a version cap. */
+  readonly checkName?: string;
+  /** `sed` command that bumps the version literal in .projenrc.ts to $NEW_VERSION. */
+  readonly bumpSed: string;
+}
+
+function addSelfUpgradeWorkflow(opts: SelfUpgradeWorkflowOptions) {
+  const workflow = project.github?.addWorkflow(`upgrade-${opts.name}`);
+  workflow?.on({
+    schedule: [{ cron: '0 6 * * 1' }],
+    workflowDispatch: {},
+  });
+  workflow?.addJob('upgrade', {
+    runsOn: ['ubuntu-latest'],
+    permissions: {
+      contents: workflows.JobPermission.WRITE,
+      pullRequests: workflows.JobPermission.WRITE,
     },
-    {
-      name: 'Setup Node',
-      uses: 'actions/setup-node@v6',
-      with: { 'node-version': 'lts/*', 'package-manager-cache': false },
-    },
-    {
-      name: 'Install dependencies',
-      run: 'npm ci',
-    },
-    {
-      name: 'Check for a newer projen version',
-      id: 'check',
-      run: [
-        'current=$(node -p "require(\'./package.json\').devDependencies.projen")',
-        'latest=$(npm view projen version)',
-        'echo "current=$current" >> "$GITHUB_OUTPUT"',
-        'echo "latest=$latest" >> "$GITHUB_OUTPUT"',
-      ].join('\n'),
-    },
-    {
-      name: 'Bump projenVersion and re-synth',
-      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
-      env: {
-        NEW_VERSION: '${{ steps.check.outputs.latest }}',
-        // projen picks `npm ci` over `npm install` when CI is set, but the
-        // lock file is still out of sync with the just-bumped projen
-        // version at this point - only `npm install` can update it.
-        CI: 'false',
+    steps: [
+      {
+        name: 'Checkout',
+        uses: 'actions/checkout@v6',
+        with: { token: '${{ secrets.PROJEN_GITHUB_TOKEN }}' },
       },
-      run: [
-        'sed -i "s/const projenVersion = \'.*\';/const projenVersion = \'${NEW_VERSION}\';/" .projenrc.ts',
-        'npx projen',
-      ].join('\n'),
-    },
-    {
-      name: 'Build',
-      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
-      run: 'npm run build',
-    },
-    {
-      name: 'Open pull request',
-      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
-      env: {
-        GH_TOKEN: '${{ secrets.PROJEN_GITHUB_TOKEN }}',
-        GH_REPO: '${{ github.repository }}',
-        NEW_VERSION: '${{ steps.check.outputs.latest }}',
-        OLD_VERSION: '${{ steps.check.outputs.current }}',
+      {
+        name: 'Setup Node',
+        uses: 'actions/setup-node@v6',
+        with: { 'node-version': 'lts/*', 'package-manager-cache': false },
       },
-      run: [
-        'git config user.name "github-actions[bot]"',
-        'git config user.email "github-actions[bot]@users.noreply.github.com"',
-        'BRANCH="chore/upgrade-projen-${NEW_VERSION}"',
-        'git checkout -b "$BRANCH"',
-        'git add -A',
-        'git commit -m "chore: upgrade projen to ${NEW_VERSION}"',
-        'git push origin "$BRANCH" --force',
-        'gh pr create --title "chore: upgrade projen to ${NEW_VERSION}" --body "Automated projen self-upgrade from ${OLD_VERSION} to ${NEW_VERSION}." --label dependencies --label auto-approve --head "$BRANCH" || echo "PR already exists for $BRANCH"',
-      ].join('\n'),
-    },
+      {
+        name: 'Install dependencies',
+        run: 'npm ci',
+      },
+      {
+        name: opts.checkName ?? `Check for a newer ${opts.name} version`,
+        id: 'check',
+        run: opts.checkRun.join('\n'),
+      },
+      {
+        name: `Bump ${opts.name}Version and re-synth`,
+        if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
+        env: {
+          NEW_VERSION: '${{ steps.check.outputs.latest }}',
+          // projen picks `npm ci` over `npm install` when CI is set, but the
+          // lock file is still out of sync with the just-bumped version at
+          // this point - only `npm install` can update it.
+          CI: 'false',
+        },
+        run: [opts.bumpSed, 'npx projen'].join('\n'),
+      },
+      {
+        name: 'Build',
+        if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
+        run: 'npm run build',
+      },
+      {
+        name: 'Open pull request',
+        if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
+        env: {
+          GH_TOKEN: '${{ secrets.PROJEN_GITHUB_TOKEN }}',
+          GH_REPO: '${{ github.repository }}',
+          NEW_VERSION: '${{ steps.check.outputs.latest }}',
+          OLD_VERSION: '${{ steps.check.outputs.current }}',
+        },
+        run: [
+          'git config user.name "github-actions[bot]"',
+          'git config user.email "github-actions[bot]@users.noreply.github.com"',
+          `BRANCH="chore/upgrade-${opts.name}-\${NEW_VERSION}"`,
+          'git checkout -b "$BRANCH"',
+          'git add -A',
+          `git commit -m "chore: upgrade ${opts.name} to \${NEW_VERSION}"`,
+          'git push origin "$BRANCH" --force',
+          `gh pr create --title "chore: upgrade ${opts.name} to \${NEW_VERSION}" --body "Automated ${opts.name} self-upgrade from \${OLD_VERSION} to \${NEW_VERSION}." --label dependencies --label auto-approve --head "$BRANCH" || echo "PR already exists for $BRANCH"`,
+        ].join('\n'),
+      },
+    ],
+  });
+}
+
+addSelfUpgradeWorkflow({
+  name: 'projen',
+  checkRun: [
+    'current=$(node -p "require(\'./package.json\').devDependencies.projen")',
+    'latest=$(npm view projen version)',
+    'echo "current=$current" >> "$GITHUB_OUTPUT"',
+    'echo "latest=$latest" >> "$GITHUB_OUTPUT"',
   ],
+  bumpSed:
+    'sed -i "s/const projenVersion = \'.*\';/const projenVersion = \'${NEW_VERSION}\';/" .projenrc.ts',
 });
 
-// `jsiiVersion` above is tilde-pinned (patch-only) for compiler compatibility
-// and, like `projenVersion`, excluded from the Dependabot group so a PR
-// widening its package.json range doesn't get reverted by self-mutation.
-// This workflow checks for a newer jsii version *within the current major*
-// only (npm view jsii@<major> caps the range) - crossing to the next major
-// stays a deliberate, human-reviewed bump, same as the typescript pin (see
-// mvc-projen-toolchain-maintenance.md).
-const upgradeJsii = project.github?.addWorkflow('upgrade-jsii');
-upgradeJsii?.on({
-  schedule: [{ cron: '0 6 * * 1' }],
-  workflowDispatch: {},
-});
-upgradeJsii?.addJob('upgrade', {
-  runsOn: ['ubuntu-latest'],
-  permissions: {
-    contents: workflows.JobPermission.WRITE,
-    pullRequests: workflows.JobPermission.WRITE,
-  },
-  steps: [
-    {
-      name: 'Checkout',
-      uses: 'actions/checkout@v6',
-      with: { token: '${{ secrets.PROJEN_GITHUB_TOKEN }}' },
-    },
-    {
-      name: 'Setup Node',
-      uses: 'actions/setup-node@v6',
-      with: { 'node-version': 'lts/*', 'package-manager-cache': false },
-    },
-    {
-      name: 'Install dependencies',
-      run: 'npm ci',
-    },
-    {
-      name: 'Check for a newer jsii version (same major)',
-      id: 'check',
-      run: [
-        'current=$(grep -oP "const jsiiVersion = .~\\K[^\']+" .projenrc.ts)',
-        'major=$(echo "$current" | cut -d. -f1)',
-        'latest=$(npm view "jsii@${major}" version --json | jq -r ".[-1]")',
-        'echo "current=$current" >> "$GITHUB_OUTPUT"',
-        'echo "latest=$latest" >> "$GITHUB_OUTPUT"',
-      ].join('\n'),
-    },
-    {
-      name: 'Bump jsiiVersion and re-synth',
-      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
-      env: {
-        NEW_VERSION: '${{ steps.check.outputs.latest }}',
-        // see the equivalent CI=false note in upgrade-projen.yml
-        CI: 'false',
-      },
-      run: [
-        'sed -i "s/const jsiiVersion = \'~.*\';/const jsiiVersion = \'~${NEW_VERSION}\';/" .projenrc.ts',
-        'npx projen',
-      ].join('\n'),
-    },
-    {
-      name: 'Build',
-      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
-      run: 'npm run build',
-    },
-    {
-      name: 'Open pull request',
-      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
-      env: {
-        GH_TOKEN: '${{ secrets.PROJEN_GITHUB_TOKEN }}',
-        GH_REPO: '${{ github.repository }}',
-        NEW_VERSION: '${{ steps.check.outputs.latest }}',
-        OLD_VERSION: '${{ steps.check.outputs.current }}',
-      },
-      run: [
-        'git config user.name "github-actions[bot]"',
-        'git config user.email "github-actions[bot]@users.noreply.github.com"',
-        'BRANCH="chore/upgrade-jsii-${NEW_VERSION}"',
-        'git checkout -b "$BRANCH"',
-        'git add -A',
-        'git commit -m "chore: upgrade jsii to ${NEW_VERSION}"',
-        'git push origin "$BRANCH" --force',
-        'gh pr create --title "chore: upgrade jsii to ${NEW_VERSION}" --body "Automated jsii self-upgrade from ${OLD_VERSION} to ${NEW_VERSION}." --label dependencies --label auto-approve --head "$BRANCH" || echo "PR already exists for $BRANCH"',
-      ].join('\n'),
-    },
+// jsii's version check is capped to the current major (npm view jsii@<major>)
+// - crossing to the next major stays a deliberate, human-reviewed bump, same
+// as the typescript pin (see mvc-projen-toolchain-maintenance.md).
+addSelfUpgradeWorkflow({
+  name: 'jsii',
+  checkName: 'Check for a newer jsii version (same major)',
+  checkRun: [
+    'current=$(grep -oP "const jsiiVersion = .~\\K[^\']+" .projenrc.ts)',
+    'major=$(echo "$current" | cut -d. -f1)',
+    'latest=$(npm view "jsii@${major}" version --json | jq -r ".[-1]")',
+    'echo "current=$current" >> "$GITHUB_OUTPUT"',
+    'echo "latest=$latest" >> "$GITHUB_OUTPUT"',
   ],
+  bumpSed:
+    'sed -i "s/const jsiiVersion = \'~.*\';/const jsiiVersion = \'~${NEW_VERSION}\';/" .projenrc.ts',
 });
 
 // publishToGo pushes a "chore(release): vX" commit straight to `main` to
