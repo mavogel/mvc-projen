@@ -118,12 +118,18 @@ export class MvcCdkConstructLibrary extends AwsCdkConstructLibrary {
         awsSdkConnectionReuse: false, // doesn't exist in AWS SDK JS v3
       },
       autoApproveOptions: {
+        // 'mvc-bot' (the PROJEN_GITHUB_TOKEN identity) is deliberately
+        // excluded: GitHub rejects a PR review from the same account that
+        // authored the PR ("Can not approve your own pull request"), and
+        // this token can also author PRs against generated projects (e.g.
+        // scaffolder-driven automation). Those PRs are auto-approved via
+        // Mergify instead, below, which posts the review as the Mergify
+        // app - a different actor. See mavogel/mvc-projen#74.
         allowedUsernames: [
           'dependabot',
           'dependabot[bot]',
           'github-bot',
           'github-actions[bot]',
-          'mvc-bot',
         ],
         // The name of the secret that has the GitHub PAT for auto-approving PRs with permissions repo, workflow, write:packages
         // Generate a new PAT (https://github.com/settings/tokens/new) and add it to your repo's secrets
@@ -308,6 +314,27 @@ add tools or links which inspired you
     // see https://github.com/MV-Consulting/cdk-vscode-server/pull/112
     this.tryFindObjectFile('.mergify.yml')?.addDeletionOverride(
       'pull_request_rules.0.actions.delete_head_branch',
+    );
+
+    // Auto-approve PRs authored by 'mvc-bot' itself (see the
+    // autoApproveOptions comment above for why this can't go through the
+    // GitHub Actions auto-approve path) via Mergify instead: it posts the
+    // review as the Mergify app, a different actor. See mavogel/mvc-projen#74.
+    this.tryFindObjectFile('.mergify.yml')?.addOverride(
+      'pull_request_rules.1',
+      {
+        name: 'Auto-approve self-authored mvc-bot PRs',
+        conditions: [
+          'author=mvc-bot',
+          'label=auto-approve',
+        ],
+        actions: {
+          review: {
+            type: 'APPROVE',
+            message: 'Automatically approved: self-authored automation PR.',
+          },
+        },
+      },
     );
 
     // gitignore
