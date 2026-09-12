@@ -56,4 +56,5 @@ junit.xml
 !/.nvmrc
 !/.github/workflows/upgrade-projen.yml
 !/.github/workflows/upgrade-jsii.yml
+!/.github/workflows/scaffold-test.yml
 !/.projenrc.ts

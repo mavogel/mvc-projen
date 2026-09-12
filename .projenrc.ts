@@ -342,6 +342,103 @@ addSelfUpgradeWorkflow({
     'sed -i "s/const jsiiVersion = \'~.*\';/const jsiiVersion = \'~${NEW_VERSION}\';/" .projenrc.ts',
 });
 
+// End-to-end regression test for MvcCdkConstructLibrary itself: pack this
+// repo's js target, install it into a scratch project the same way a real
+// consumer would (`npm install @mavogel/mvc-projen`), synth a minimal
+// project from it, and jsii-compile the result. `projen new --from
+// <local-tarball-path>` is NOT used here - verified separately that it
+// writes the raw --from path as the devDependency name/spec instead of the
+// tarball's actual package name, so a fresh `npm install` in the scaffolded
+// project fails with EINVALIDPACKAGENAME regardless of what this class
+// does (a projen CLI limitation with local paths, not something real
+// consumers hit against the published registry package this README
+// documents). This exact setup is what caught two real bugs during
+// development: AutoDiscover never finding crd-example.lambda.ts (written
+// too late, during synthesize() instead of before AwsCdkConstructLibrary's
+// super() call) and crd-example.lambda.ts importing a type from
+// aws-cdk-lib's custom-resources/lib/provider-framework/types, a path
+// aws-cdk-lib's package.json "exports" map doesn't expose.
+const scaffoldTest = project.github?.addWorkflow('scaffold-test');
+scaffoldTest?.on({
+  pullRequest: {},
+  push: { branches: ['main'] },
+  workflowDispatch: {},
+});
+scaffoldTest?.addJob('scaffold', {
+  runsOn: ['ubuntu-latest'],
+  permissions: {
+    contents: workflows.JobPermission.READ,
+  },
+  steps: [
+    {
+      name: 'Checkout',
+      uses: 'actions/checkout@v6',
+    },
+    {
+      name: 'Setup Node',
+      uses: 'actions/setup-node@v6',
+      with: { 'node-version': '24', 'package-manager-cache': false },
+    },
+    {
+      name: 'Install dependencies',
+      run: 'npm ci',
+    },
+    {
+      name: 'Package js target',
+      run: 'npm run package:js',
+    },
+    {
+      name: 'Scaffold a throwaway project from the packed tarball',
+      run: [
+        'set -euo pipefail',
+        'TARBALL="$(pwd)/$(ls dist/js/*.tgz)"',
+        'SCRATCH=$(mktemp -d)',
+        'cd "$SCRATCH"',
+        'npm init -y >/dev/null',
+        'npm install "$TARBALL" typescript@^6.0.2 ts-node projen constructs',
+        // ts-node needs a tsconfig.json in scope, or it silently no-ops
+        // instead of compiling/running .projenrc.ts.
+        'cat > tsconfig.json <<\'TSCONFIG\'',
+        '{',
+        '  "compilerOptions": {',
+        '    "target": "ES2020",',
+        '    "module": "commonjs",',
+        '    "moduleResolution": "node",',
+        '    "esModuleInterop": true,',
+        '    "skipLibCheck": true,',
+        '    "strict": false',
+        '  }',
+        '}',
+        'TSCONFIG',
+        'cat > .projenrc.ts <<\'PROJENRC\'',
+        'import { MvcCdkConstructLibrary } from \'@mavogel/mvc-projen\';',
+        '',
+        'const project = new MvcCdkConstructLibrary({',
+        '  author: \'ci\',',
+        '  authorAddress: \'ci@example.com\',',
+        '  name: \'scaffold-test\',',
+        '  defaultReleaseBranch: \'main\',',
+        '  repositoryUrl: \'https://github.com/MV-Consulting/scaffold-test.git\',',
+        '} as any); // cdkVersion deliberately omitted - exercises the default',
+        '',
+        'project.synth();',
+        'PROJENRC',
+        'echo "SCAFFOLD_DIR=$SCRATCH" >> "$GITHUB_ENV"',
+        './node_modules/.bin/ts-node .projenrc.ts',
+      ].join('\n'),
+    },
+    {
+      name: 'Verify the scaffolded project compiles',
+      // Use the scaffolded project's own pinned jsii (installed by
+      // project.synth()'s postSynthesize npm install above), not `npx
+      // jsii` - an unpinned, externally-fetched version can resolve
+      // differently between runs and disagrees on how to handle the
+      // "@mavogel/mvc-projen" file: dependency this setup leaves behind.
+      run: 'cd "$SCAFFOLD_DIR" && ./node_modules/.bin/jsii --silence-warnings=reserved-word',
+    },
+  ],
+});
+
 // publishToGo pushes a "chore(release): vX" commit straight to `main` to
 // publish the go submodule, which re-triggers this same `on: push` release
 // workflow. On that second run, `bump`'s CHANGES_SINCE_LAST_RELEASE guard

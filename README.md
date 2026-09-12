@@ -27,11 +27,10 @@ The [projen](https://projen.io/) baseline for all [MV Consulting](https://manuel
 mkdir my-new-construct &&  cd my-new-construct
 
 # 2. set up the project using the projen new command
-npx projen new \
-    --from @mavogel/mvc-projen@~0 \
-    --cdkVersion=2.261.0 \
-    --package-manager=npm
+npx projen new --from @mavogel/mvc-projen@~0
 ```
+
+By default this uses npm and a recent AWS CDK version; pass `--cdkVersion=x.y.z` or `--package-manager=<pnpm|yarn|...>` to override either.
 
 ## Inspiration
 This project was created based on the following inspiration

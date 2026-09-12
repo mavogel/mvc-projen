@@ -19,6 +19,24 @@ const lambdaNodeVersion = LambdaRuntime.NODEJS_24_X;
 // has released newer versions than this one.
 const LAST_INTEG_RUNNER_VERSION = '2.203.0';
 
+// AwsCdkConstructLibraryOptions.cdkVersion's own upstream `@default`
+// (node_modules/projen/lib/awscdk/awscdk-deps.d.ts) - what `projen new`
+// fills in when `--cdkVersion` is omitted. jsii forbids a derived options
+// interface from re-declaring an inherited member (JSII5015: "results in
+// invalid C#"), so we can't override the `@default` doc the CLI reflects
+// on to change that. Detecting this exact value below and substituting our
+// own default is the only remaining lever.
+const UPSTREAM_DEFAULT_CDK_VERSION = '2.189.1';
+
+// Our default `cdkVersion` when the caller (or `projen new`) doesn't pass
+// one. Must stay >= 2.257.0: cdk-nag v3 (forced below via addDeps) requires
+// it as a peer, and the upstream default above fails `npm install` with an
+// ERESOLVE conflict on a fresh scaffold.
+// SHORTCUT: both hardcoded versions require manual re-verification -- run
+// `npm view aws-cdk-lib version` and re-check awscdk-deps.d.ts's `@default`
+// periodically (it may drift on a projen upgrade).
+const DEFAULT_CDK_VERSION = '2.261.0';
+
 /**
  * The options for the construct
  */
@@ -48,6 +66,40 @@ export class MvcCdkConstructLibrary extends AwsCdkConstructLibrary {
   constructor(options: MvcCdkConstructLibraryOptions) {
     const baseAssetsDirectory = options.baseAssetsDirectory ?? `${process.cwd()}/node_modules/@mavogel/mvc-projen/assets`;
     const integTestRegions = options.integTestRegions ?? ['eu-west-1', 'eu-west-2'];
+    // `options.cdkVersion` is typed as required, but `projen new` always
+    // supplies a value via jsii reflection - either a real user override,
+    // or (if --cdkVersion was omitted) the upstream `@default` literal
+    // itself. Substitute ours only in the latter case, verified below.
+    const cdkVersion = (!options.cdkVersion || options.cdkVersion === UPSTREAM_DEFAULT_CDK_VERSION)
+      ? DEFAULT_CDK_VERSION
+      : options.cdkVersion;
+
+    // AwsCdkConstructLibrary's `super()` call below wires up an AutoDiscover
+    // component whose constructor synchronously globs `srcdir` for
+    // `*.lambda.ts` entrypoints - it never re-scans later. SampleCode (added
+    // at the end of this constructor) writes the sample crd-example.lambda.ts
+    // during the project's synthesize() phase, which runs after every
+    // component's constructor, including AutoDiscover's - so the file never
+    // existed for AutoDiscover to find, no LambdaFunction/Bundler ever got
+    // created for it, and the generated crd-example.ts was left importing a
+    // './crd-example-function' construct file that no one wrote, breaking
+    // eslint on every scaffold. Write just this one file early enough for
+    // AutoDiscover to see it; SampleCode still owns everything else.
+    // Skip under Jest (NODE_ENV=test, matching projen's own IS_TEST_RUN
+    // check): when options.outdir is unset (true for every test in this
+    // repo), projen's base Project class - constructed via super() below -
+    // redirects the *real* outdir to a fresh temp directory instead of cwd.
+    // This early write runs before that redirect exists, so without this
+    // guard it would write straight into this repo's own working tree
+    // instead of the test's temp dir.
+    if ((options.sampleCode ?? true) && process.env.NODE_ENV !== 'test') {
+      const outdir = path.resolve(options.outdir ?? '.');
+      const lambdaEntrypoint = path.join(outdir, 'src', 'crd-example', 'crd-example.lambda.ts');
+      if (!fs.existsSync(lambdaEntrypoint)) {
+        fs.mkdirSync(path.dirname(lambdaEntrypoint), { recursive: true });
+        fs.writeFileSync(lambdaEntrypoint, fs.readFileSync(`${baseAssetsDirectory}/cdk-construct/src_crd-example.lambda.ts`).toString());
+      }
+    }
 
     super({
       authorOrganization: true,
@@ -241,6 +293,9 @@ add tools or links which inspired you
       },
       // NOTE: keep all the passed in options which can override the existing ones!
       ...options,
+      // applied after ...options so the DEFAULT_CDK_VERSION fallback above
+      // always wins over an undefined options.cdkVersion
+      cdkVersion,
     });
 
     // TypeScript 6 no longer auto-discovers @types/* packages
@@ -372,8 +427,7 @@ class SampleCode extends Component {
     const outdir = this.project.outdir;
     const srcdir = path.join(outdir, this.library.srcdir);
     if (
-      fs.existsSync(srcdir) &&
-      fs.readdirSync(srcdir).filter((x) => x.endsWith('.ts')) &&
+      fs.existsSync(`${srcdir}/index.ts`) &&
       !fs.readFileSync(`${srcdir}/index.ts`).toString().includes('export class Hello') // Note: from parent
     ) {
       return;
@@ -383,9 +437,11 @@ class SampleCode extends Component {
     fs.writeFileSync(path.join(srcdir, 'index.ts'), fs.readFileSync(`${this.options.baseAssetsDirectory}/cdk-construct/src_index.ts`).toString());
     fs.writeFileSync(path.join(srcdir, 'placeholder.ts'), fs.readFileSync(`${this.options.baseAssetsDirectory}/cdk-construct/src_placeholder.ts`).toString());
     // crd with lambda generation
+    // Note: crd-example.lambda.ts is written earlier, before `super()`, so
+    // AutoDiscover's constructor-time glob can find it - see the comment in
+    // the constructor above.
     fs.mkdirSync(`${srcdir}/crd-example`, { recursive: true });
     fs.writeFileSync(path.join(`${srcdir}/crd-example`, 'crd-example.ts'), fs.readFileSync(`${this.options.baseAssetsDirectory}/cdk-construct/src_crd-example.ts`).toString());
-    fs.writeFileSync(path.join(`${srcdir}/crd-example`, 'crd-example.lambda.ts'), fs.readFileSync(`${this.options.baseAssetsDirectory}/cdk-construct/src_crd-example.lambda.ts`).toString());
 
 
     const testdir = path.join(outdir, this.library.testdir);

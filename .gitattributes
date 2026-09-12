@@ -10,6 +10,7 @@
 /.github/workflows/build.yml linguist-generated
 /.github/workflows/pull-request-lint.yml linguist-generated
 /.github/workflows/release.yml linguist-generated
+/.github/workflows/scaffold-test.yml linguist-generated
 /.github/workflows/upgrade-jsii.yml linguist-generated
 /.github/workflows/upgrade-projen.yml linguist-generated
 /.gitignore linguist-generated
