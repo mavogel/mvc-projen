@@ -56,4 +56,8 @@ junit.xml
 !/.nvmrc
 !/.github/workflows/upgrade-projen.yml
 !/.github/workflows/upgrade-jsii.yml
+!/.github/workflows/upgrade-integ-runner.yml
+!/.github/workflows/upgrade-default-cdk-version.yml
+!/.github/workflows/upgrade-upstream-cdk-default.yml
+!/.github/workflows/scaffold-test.yml
 !/.projenrc.ts
