@@ -12,6 +12,12 @@ This repo's own build (`.projenrc.ts`, a `cdk.JsiiProject`) pins several version
 | `jsiiVersion` | `~5.9.0` | Compiler compatibility |
 | `typescriptVersion` | `^6.0.2` | **Prevents drifting onto TypeScript 7** (see gotcha below) |
 
+## Use Node 24 locally, matching `.nvmrc`
+
+This repo's `.nvmrc` pins Node `24` — the version jsii's compiler actually supports (jsii's supported list: `^24.0.0`, `^22.0.0`, `^20.0.0` [deprecated]). Before running `npx projen`, `npm run build`, `npm install`, or any other repo command, switch to it: `nvm use` (reads `.nvmrc` automatically) or `nvm use 24`.
+
+Running under a newer Node (e.g. Node 26, the current non-LTS release as of this writing) doesn't break the build, but every `jsii`/`jsii-pacmak` invocation prints an "untested node version" warning and clutters output — annoying to read through and easy to mistake for a real problem. If a shell's default Node is already 26+, run `nvm use 24` first rather than ignoring the warning.
+
 ## ⚠️ Gotcha: unpinned `typescript` devDependency drifts onto breaking majors
 
 If `typescriptVersion` is ever removed from the `JsiiProject` options, projen adds `typescript` as a devDependency with **no version range** (`node_modules/projen/lib/typescript/typescript.js` — `tsDep = options.typescriptVersion ? "typescript@${...}" : "typescript"`). npm then resolves it to whatever is latest at synth time.
