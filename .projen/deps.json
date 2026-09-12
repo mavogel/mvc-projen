@@ -93,7 +93,7 @@
     },
     {
       "name": "projen",
-      "version": "0.103.12",
+      "version": "0.103.20",
       "type": "build"
     },
     {
@@ -116,7 +116,7 @@
     },
     {
       "name": "projen",
-      "version": "^0.103.12",
+      "version": "^0.103.20",
       "type": "peer"
     },
     {
@@ -126,7 +126,7 @@
     },
     {
       "name": "projen",
-      "version": "^0.103.12",
+      "version": "^0.103.20",
       "type": "runtime"
     }
   ],

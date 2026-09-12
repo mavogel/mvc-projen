@@ -3,7 +3,7 @@ import { DependabotScheduleInterval, workflows } from 'projen/lib/github';
 import { NpmAccess } from 'projen/lib/javascript';
 
 // Find the latest projen version here: https://www.npmjs.com/package/projen
-const projenVersion = '0.103.12';
+const projenVersion = '0.103.20';
 const dependencies = [
   `projen@^${projenVersion}`, // DO not move the index 0 to another position!
   'constructs@^10.5.1',
