@@ -10,6 +10,8 @@ updates:
     ignore:
       - dependency-name: aws-cdk-lib
       - dependency-name: aws-cdk
+      - dependency-name: jsii
+      - dependency-name: jsii-rosetta
       - dependency-name: projen
     labels:
       - dependencies
@@ -21,3 +23,5 @@ updates:
         exclude-patterns:
           - aws-cdk*
           - projen
+          - jsii
+          - jsii-rosetta

@@ -8,6 +8,7 @@
     ".github/workflows/build.yml",
     ".github/workflows/pull-request-lint.yml",
     ".github/workflows/release.yml",
+    ".github/workflows/upgrade-jsii.yml",
     ".github/workflows/upgrade-projen.yml",
     ".gitignore",
     ".mergify.yml",
