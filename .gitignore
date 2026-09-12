@@ -55,4 +55,5 @@ junit.xml
 !/API.md
 !/.nvmrc
 !/.github/workflows/upgrade-projen.yml
+!/.github/workflows/upgrade-jsii.yml
 !/.projenrc.ts

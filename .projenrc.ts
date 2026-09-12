@@ -4,6 +4,9 @@ import { NpmAccess } from 'projen/lib/javascript';
 
 // Find the latest projen version here: https://www.npmjs.com/package/projen
 const projenVersion = '0.103.20';
+// jsii is tilde-pinned (patch-only) for compiler compatibility - see
+// upgrade-jsii workflow below for why it needs its own bump automation.
+const jsiiVersion = '~6.0.0';
 const dependencies = [
   `projen@^${projenVersion}`, // DO not move the index 0 to another position!
   'constructs@^10.5.1',
@@ -13,7 +16,7 @@ const project = new cdk.JsiiProject({
   author: 'Manuel Vogel',
   authorAddress: '8409778+mavogel@users.noreply.github.com',
   defaultReleaseBranch: 'main',
-  jsiiVersion: '~6.0.0',
+  jsiiVersion: jsiiVersion,
   typescriptVersion: '^6.0.2',
   projenVersion: projenVersion,
   name: 'mvc-projen',
@@ -58,10 +61,26 @@ const project = new cdk.JsiiProject({
     groups: {
       default: {
         patterns: ['*'],
-        excludePatterns: ['aws-cdk*', 'projen'],
+        // 'jsii' and 'jsii-rosetta' are excluded alongside 'projen': both
+        // are tilde-pinned to the `jsiiVersion` literal above, which the
+        // upgrade-jsii workflow (below) bumps directly. A Dependabot PR
+        // widening their package.json range would just get reverted by
+        // the self-mutation check on the next `npx projen` run, since
+        // that literal is the source of truth.
+        excludePatterns: ['aws-cdk*', 'projen', 'jsii', 'jsii-rosetta'],
       },
     },
-    ignore: [{ dependencyName: 'aws-cdk-lib' }, { dependencyName: 'aws-cdk' }],
+    // 'jsii'/'jsii-rosetta' must be in `ignore` (not just excludePatterns
+    // above) to actually stop Dependabot from opening PRs for them -
+    // excludePatterns only controls grouping, it doesn't ignore a
+    // dependency. 'projen' gets the same full ignore automatically via
+    // JsiiProject's default `ignoreProjen: true`.
+    ignore: [
+      { dependencyName: 'aws-cdk-lib' },
+      { dependencyName: 'aws-cdk' },
+      { dependencyName: 'jsii' },
+      { dependencyName: 'jsii-rosetta' },
+    ],
   },
   // See https://github.com/projen/projen/discussions/4040#discussioncomment-11905628
   releasableCommits: ReleasableCommits.ofType([
@@ -283,6 +302,91 @@ upgradeProjen?.addJob('upgrade', {
         'git commit -m "chore: upgrade projen to ${NEW_VERSION}"',
         'git push origin "$BRANCH" --force',
         'gh pr create --title "chore: upgrade projen to ${NEW_VERSION}" --body "Automated projen self-upgrade from ${OLD_VERSION} to ${NEW_VERSION}." --label dependencies --label auto-approve --head "$BRANCH" || echo "PR already exists for $BRANCH"',
+      ].join('\n'),
+    },
+  ],
+});
+
+// `jsiiVersion` above is tilde-pinned (patch-only) for compiler compatibility
+// and, like `projenVersion`, excluded from the Dependabot group so a PR
+// widening its package.json range doesn't get reverted by self-mutation.
+// This workflow checks for a newer jsii version *within the current major*
+// only (npm view jsii@<major> caps the range) - crossing to the next major
+// stays a deliberate, human-reviewed bump, same as the typescript pin (see
+// mvc-projen-toolchain-maintenance.md).
+const upgradeJsii = project.github?.addWorkflow('upgrade-jsii');
+upgradeJsii?.on({
+  schedule: [{ cron: '0 6 * * 1' }],
+  workflowDispatch: {},
+});
+upgradeJsii?.addJob('upgrade', {
+  runsOn: ['ubuntu-latest'],
+  permissions: {
+    contents: workflows.JobPermission.WRITE,
+    pullRequests: workflows.JobPermission.WRITE,
+  },
+  steps: [
+    {
+      name: 'Checkout',
+      uses: 'actions/checkout@v6',
+      with: { token: '${{ secrets.PROJEN_GITHUB_TOKEN }}' },
+    },
+    {
+      name: 'Setup Node',
+      uses: 'actions/setup-node@v6',
+      with: { 'node-version': 'lts/*', 'package-manager-cache': false },
+    },
+    {
+      name: 'Install dependencies',
+      run: 'npm ci',
+    },
+    {
+      name: 'Check for a newer jsii version (same major)',
+      id: 'check',
+      run: [
+        'current=$(grep -oP "const jsiiVersion = .~\\K[^\']+" .projenrc.ts)',
+        'major=$(echo "$current" | cut -d. -f1)',
+        'latest=$(npm view "jsii@${major}" version --json | jq -r ".[-1]")',
+        'echo "current=$current" >> "$GITHUB_OUTPUT"',
+        'echo "latest=$latest" >> "$GITHUB_OUTPUT"',
+      ].join('\n'),
+    },
+    {
+      name: 'Bump jsiiVersion and re-synth',
+      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
+      env: {
+        NEW_VERSION: '${{ steps.check.outputs.latest }}',
+        // see the equivalent CI=false note in upgrade-projen.yml
+        CI: 'false',
+      },
+      run: [
+        'sed -i "s/const jsiiVersion = \'~.*\';/const jsiiVersion = \'~${NEW_VERSION}\';/" .projenrc.ts',
+        'npx projen',
+      ].join('\n'),
+    },
+    {
+      name: 'Build',
+      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
+      run: 'npm run build',
+    },
+    {
+      name: 'Open pull request',
+      if: '${{ steps.check.outputs.current != steps.check.outputs.latest }}',
+      env: {
+        GH_TOKEN: '${{ secrets.PROJEN_GITHUB_TOKEN }}',
+        GH_REPO: '${{ github.repository }}',
+        NEW_VERSION: '${{ steps.check.outputs.latest }}',
+        OLD_VERSION: '${{ steps.check.outputs.current }}',
+      },
+      run: [
+        'git config user.name "github-actions[bot]"',
+        'git config user.email "github-actions[bot]@users.noreply.github.com"',
+        'BRANCH="chore/upgrade-jsii-${NEW_VERSION}"',
+        'git checkout -b "$BRANCH"',
+        'git add -A',
+        'git commit -m "chore: upgrade jsii to ${NEW_VERSION}"',
+        'git push origin "$BRANCH" --force',
+        'gh pr create --title "chore: upgrade jsii to ${NEW_VERSION}" --body "Automated jsii self-upgrade from ${OLD_VERSION} to ${NEW_VERSION}." --label dependencies --label auto-approve --head "$BRANCH" || echo "PR already exists for $BRANCH"',
       ].join('\n'),
     },
   ],
