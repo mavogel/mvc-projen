@@ -1,6 +1,6 @@
 # Toolchain Maintenance: projen / jsii / typescript
 
-**Last Updated:** 2026-07-21
+**Last Updated:** 2026-09-12
 
 This repo's own build (`.projenrc.ts`, a `cdk.JsiiProject`) pins several versions as literals. These pins exist for specific reasons — don't remove them without understanding why.
 
@@ -9,7 +9,7 @@ This repo's own build (`.projenrc.ts`, a `cdk.JsiiProject`) pins several version
 | Setting | Value | Why pinned |
 |---|---|---|
 | `projenVersion` (const, top of file) | `0.101.17` | Source of truth for `package.json`'s `projen` entry — see below |
-| `jsiiVersion` | `~5.9.0` | Compiler compatibility |
+| `jsiiVersion` | `~6.0.0` | Compiler compatibility |
 | `typescriptVersion` | `^6.0.2` | **Prevents drifting onto TypeScript 7** (see gotcha below) |
 
 ## Use Node 24 locally, matching `.nvmrc`
@@ -28,22 +28,23 @@ This broke the build on 2026-07-21: TypeScript 7.0.2 (the new Go-ported compiler
 
 **Known gap:** `src/projects/cdk-construct.ts` (`MvcCdkConstructLibrary`, what this module scaffolds for *consumers*) does NOT set `typescriptVersion` in its own projen options. Generated consumer projects are exposed to the same drift/break. Worth fixing in `cdk-construct.ts` as a follow-up — not yet done.
 
-## Keeping `projen` itself current
+## Keeping `projen` and `jsii` current
 
-`projenVersion` is a hardcoded literal, not a normal devDependency range — it's the source of truth that regenerates `package.json`'s `projen` entry on every `npx projen` run. This is why `dependabotOptions.groups.default.excludePatterns` excludes `projen`: a Dependabot PR that only edits `package.json` would get silently reverted by the `self_mutation_happened` check in `.github/workflows/build.yml` (`npx projen` would just re-derive the old pinned version).
+`projenVersion` and `jsiiVersion` are hardcoded literals, not normal devDependency ranges — they're the source of truth that regenerates `package.json`'s `projen`/`jsii`/`jsii-rosetta` entries on every `npx projen` run. This is why `dependabotOptions.groups.default.excludePatterns`/`ignore` exclude `projen`, `jsii`, and `jsii-rosetta`: a Dependabot PR that only edits `package.json` would get silently reverted by the `self_mutation_happened` check in `.github/workflows/build.yml` (`npx projen` would just re-derive the old pinned literal). `typescriptVersion` doesn't need this — it's a caret range, so `npm update`/Dependabot can already advance it within the current major via lockfile-only changes.
 
-**`.github/workflows/upgrade-projen.yml`** automates this instead (weekly cron, Monday 06:00 UTC, + manual `workflow_dispatch`):
+Two generated workflows automate the literal bumps instead (both weekly cron, Monday 06:00 UTC, + manual `workflow_dispatch`), sharing the `addSelfUpgradeWorkflow()` builder in `.projenrc.ts`:
 
-1. Compares `package.json`'s current `devDependencies.projen` against `npm view projen version`
-2. If different: `sed`-updates the `projenVersion` const in `.projenrc.ts`, runs `npx projen` to re-synth everything, then `npm run build` as a gate
-3. Only if the build passes: commits to a `chore/upgrade-projen-<version>` branch and opens a PR via `gh pr create` (labeled `dependencies`, `auto-approve`)
+- **`.github/workflows/upgrade-projen.yml`**: compares `package.json`'s current `devDependencies.projen` against `npm view projen version`.
+- **`.github/workflows/upgrade-jsii.yml`**: reads the `jsiiVersion` literal out of `.projenrc.ts` and compares it against the latest version *within the current major only* (`npm view jsii@<major>`) — crossing to the next jsii major stays a deliberate, human-reviewed bump, same as the `typescriptVersion` pin.
+
+Both, if the versions differ: `sed`-update the literal in `.projenrc.ts`, run `npx projen` to re-synth everything, then `npm run build` as a gate. Only if the build passes: commit to a `chore/upgrade-<projen|jsii>-<version>` branch and open a PR via `gh pr create` (labeled `dependencies`, `auto-approve`) — auto-approved by a Mergify rule (since the PR is opened by `mvc-bot` via `PROJEN_GITHUB_TOKEN`, and GitHub rejects a PR review from the same account that authored the PR) and merged once required checks pass.
 
 To bump manually instead of waiting for the cron (or to debug it):
 
 ```bash
-npm view projen version                        # check latest
+npm view projen version                         # check latest
 # edit the `projenVersion` const in .projenrc.ts
-npx projen && npm run build                     # re-synth + verify
+npx projen && npm run build                      # re-synth + verify
 ```
 
 Same procedure applies to bumping `jsiiVersion` or `typescriptVersion` — always re-run the full build afterward; jsii/projen major bumps can change generated file layout (e.g. the 0.99→0.101 bump split `tsconfig.dev.json` into `tsconfig.json` + `test/tsconfig.json` + `projenrc/tsconfig.json`).
