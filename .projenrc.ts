@@ -34,12 +34,16 @@ const project = new cdk.JsiiProject({
   npmTrustedPublishing: true /* Publish to npmjs.com via OIDC trusted publishing instead of NPM_TOKEN. */,
   keywords: ['aws', 'cdk', 'construct', 'projen'],
   autoApproveOptions: {
+    // 'mvc-bot' (the PROJEN_GITHUB_TOKEN identity) is deliberately excluded:
+    // it also opens the upgrade-projen PR (see below), and GitHub rejects a
+    // PR review from the same account that authored the PR ("Can not
+    // approve your own pull request"). That PR is auto-approved via Mergify
+    // instead, which posts the review as the Mergify app, a different actor.
     allowedUsernames: [
       'dependabot',
       'dependabot[bot]',
       'github-bot',
       'github-actions[bot]',
-      'mvc-bot',
     ],
     /**
      * The name of the secret that has the GitHub PAT for auto-approving PRs with permissions repo, workflow, write:packages
@@ -165,6 +169,29 @@ const project = new cdk.JsiiProject({
 // see https://github.com/mavogel/mvc-projen/pull/58
 project.tryFindObjectFile('.mergify.yml')?.addDeletionOverride(
   'pull_request_rules.0.actions.delete_head_branch',
+);
+
+// The upgrade-projen workflow (below) opens its PR as 'mvc-bot' using
+// PROJEN_GITHUB_TOKEN - the same identity auto-approve.yml would otherwise
+// use to approve it, which GitHub rejects as a self-approval (see
+// autoApproveOptions above). Have Mergify approve these PRs instead: it
+// posts the review as the Mergify app, satisfying the queue's
+// `#approved-reviews-by>=1` condition without a self-approval.
+project.tryFindObjectFile('.mergify.yml')?.addOverride(
+  'pull_request_rules.1',
+  {
+    name: 'Auto-approve self-authored upgrade-projen PRs',
+    conditions: [
+      'author=mvc-bot',
+      'label=auto-approve',
+    ],
+    actions: {
+      review: {
+        type: 'APPROVE',
+        message: 'Automatically approved: self-authored projen upgrade PR.',
+      },
+    },
+  },
 );
 
 // TypeScript 6 no longer auto-discovers @types/* packages
