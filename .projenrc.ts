@@ -384,8 +384,10 @@ scaffoldTest?.addJob('scaffold', {
       run: 'npm ci',
     },
     {
-      name: 'Package js target',
-      run: 'npm run package:js',
+      // package:js (jsii-pacmak) requires the .jsii assembly that only
+      // `compile` produces - a fresh checkout has neither.
+      name: 'Compile and package js target',
+      run: 'npm run compile && npm run package:js',
     },
     {
       name: 'Scaffold a throwaway project from the packed tarball',

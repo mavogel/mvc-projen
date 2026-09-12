@@ -25,9 +25,9 @@ jobs:
       - name: Install dependencies
         id: install_dependencies
         run: npm ci
-      - name: Package js target
-        id: package_js_target
-        run: npm run package:js
+      - name: Compile and package js target
+        id: compile_and_package_js_target
+        run: npm run compile && npm run package:js
       - name: Scaffold a throwaway project from the packed tarball
         id: scaffold_a_throwaway_project_from_the_packed_tarball
         run: |-
