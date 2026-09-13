@@ -147,6 +147,12 @@ export class MvcCdkConstructLibrary extends AwsCdkConstructLibrary {
           },
         },
         ignore: [{ dependencyName: 'aws-cdk-lib' }, { dependencyName: 'aws-cdk' }],
+        // zizmor's dependabot-cooldown audit flags a default cooldown under
+        // 7 days as insufficient time to catch a compromised release.
+        // https://docs.zizmor.sh/audits/#dependabot-cooldown
+        cooldown: {
+          defaultDays: 7,
+        },
       },
       // // See https://github.com/projen/projen/discussions/4040#discussioncomment-11905628
       releasableCommits: ReleasableCommits.ofType([
@@ -462,6 +468,25 @@ add tools or links which inspired you
     new YamlFile(this, '.github/FUNDING.yaml', {
       obj: {
         github: 'mavogel',
+      },
+    });
+
+    // zizmor's dangerous-triggers audit flags any pull_request_target
+    // trigger. Both workflows below (generated identically for every
+    // MvcCdkConstructLibrary consumer via autoApproveOptions /
+    // pullRequestLintOptions) are safe: they only inspect PR metadata (label,
+    // actor, title) and never check out or execute PR code.
+    // https://docs.zizmor.sh/audits/#dangerous-triggers
+    new YamlFile(this, '.github/zizmor.yml', {
+      obj: {
+        rules: {
+          'dangerous-triggers': {
+            ignore: [
+              'auto-approve.yml',
+              'pull-request-lint.yml',
+            ],
+          },
+        },
       },
     });
 

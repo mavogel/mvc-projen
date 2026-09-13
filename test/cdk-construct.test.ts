@@ -91,6 +91,17 @@ describe('GitHub Actions security hardening', () => {
     const releasePersistCredentialsFalseCount = (releaseYml.match(/persist-credentials: false/g) ?? []).length;
     expect(releasePersistCredentialsFalseCount).toEqual(releaseCheckoutCount);
   });
+
+  test('ignores the safe pull_request_target triggers and sets a dependabot cooldown', () => {
+    const project = new MvcCdkConstructLibrary(minimalMvcCdkConstructLibraryOptions);
+    const snap = synthSnapshot(project);
+
+    const zizmorConfig: string = snap['.github/zizmor.yml'];
+    expect(zizmorConfig).toMatch(/auto-approve\.yml/);
+    expect(zizmorConfig).toMatch(/pull-request-lint\.yml/);
+
+    expect(snap['.github/dependabot.yml']).toMatch(/cooldown:\n\s+default-days: 7/);
+  });
 });
 
 describe('alpha package version capping', () => {
