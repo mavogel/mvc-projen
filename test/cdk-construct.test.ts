@@ -51,6 +51,48 @@ describe('configurations', () => {
   });
 });
 
+describe('GitHub Actions security hardening', () => {
+  test('pins mutable-tag actions to a commit SHA and skips checkout credential persistence where safe', () => {
+    const project = new MvcCdkConstructLibrary({
+      ...minimalMvcCdkConstructLibraryOptions,
+      // depsUpgrade's own upgrade-main.yml is skipped by default when
+      // Dependabot is enabled (mvc-projen's default) - disable it to get
+      // upgrade-main.yml in this snapshot too.
+      dependabot: false,
+      publishToPypi: {
+        distName: 'test-project',
+        module: 'test_project',
+      },
+    });
+    const snap = synthSnapshot(project);
+
+    for (const workflow of ['build.yml', 'release.yml', 'upgrade-main.yml']) {
+      const contents: string = snap[`.github/workflows/${workflow}`];
+      expect(contents).not.toMatch(/uses: actions\/setup-node@v\d/);
+      expect(contents).not.toMatch(/uses: actions\/setup-python@v\d/);
+      expect(contents).not.toMatch(/uses: peter-evans\/create-pull-request@v\d/);
+    }
+
+    const buildYml: string = snap['.github/workflows/build.yml'];
+    // `self-mutation` needs the persisted checkout credential to push its
+    // patch back to the PR branch, so it must keep the default (no override).
+    const selfMutationJob = buildYml.split('self-mutation:')[1].split(/^  \S/m)[0];
+    expect(selfMutationJob).not.toMatch(/persist-credentials: false/);
+
+    // every other checkout in build.yml never pushes, so it's safe to drop
+    // the persisted credential.
+    const otherCheckouts = buildYml.split('self-mutation:')[0] + buildYml.split('self-mutation:')[1].split(/^  \S/m).slice(1).join('');
+    const checkoutCount = (otherCheckouts.match(/name: Checkout/g) ?? []).length;
+    const persistCredentialsFalseCount = (otherCheckouts.match(/persist-credentials: false/g) ?? []).length;
+    expect(persistCredentialsFalseCount).toEqual(checkoutCount);
+
+    const releaseYml: string = snap['.github/workflows/release.yml'];
+    const releaseCheckoutCount = (releaseYml.match(/name: Checkout/g) ?? []).length;
+    const releasePersistCredentialsFalseCount = (releaseYml.match(/persist-credentials: false/g) ?? []).length;
+    expect(releasePersistCredentialsFalseCount).toEqual(releaseCheckoutCount);
+  });
+});
+
 describe('alpha package version capping', () => {
   test('uses cdkVersion when below the last integ-runner version', () => {
     const project = new MvcCdkConstructLibrary({

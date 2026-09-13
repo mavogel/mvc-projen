@@ -397,6 +397,55 @@ add tools or links which inspired you
       ],
     });
 
+    // Pin GitHub Actions that projen otherwise references by a mutable tag,
+    // and stop checkout steps that never push back with it from persisting a
+    // git credential on the runner - per zizmor's unpinned-uses / artipacked
+    // audits (https://docs.zizmor.sh/audits/). Centralized here so every
+    // project built on MvcCdkConstructLibrary gets a clean `zizmor .` run
+    // without reimplementing this in its own .projenrc.ts.
+    this.github?.actions.set('actions/setup-node@v7.0.0', 'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020'); // v7.0.0
+    this.github?.actions.set('actions/setup-python@v7.0.0', 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97'); // v7.0.0
+    this.github?.actions.set('peter-evans/create-pull-request@v8.1.1', 'peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1'); // v8.1.1
+
+    const disableCheckoutCredentialPersistence = (workflowName: string, jobIds: string[]) => {
+      const workflow = this.github?.tryFindWorkflow(workflowName);
+      if (!workflow) return;
+      for (const jobId of jobIds) {
+        const job = workflow.getJob(jobId);
+        if (!job || !('steps' in job)) continue;
+        // `job.steps` is a bound accessor function until a job's first
+        // `updateJob()` call, after which it becomes a plain array (see the
+        // "TODO: figure out why wrong types" comment on the build.yml patch
+        // above) - so resolve it defensively rather than assuming either shape.
+        const rawSteps = job.steps as unknown as JobStep[] | (() => JobStep[]);
+        const currentSteps = typeof rawSteps === 'function' ? rawSteps() : rawSteps;
+        workflow.updateJob(jobId, {
+          ...job,
+          steps: currentSteps.map((step) =>
+            step.id === 'checkout'
+              ? { ...step, with: { ...step.with, 'persist-credentials': false } }
+              : step,
+          ),
+        });
+      }
+    };
+    // Excludes build.yml's `self-mutation` job, which relies on the
+    // persisted credential to `git push` its patch back to the PR branch.
+    disableCheckoutCredentialPersistence('build', ['build', 'package-js', 'package-python']);
+    disableCheckoutCredentialPersistence('upgrade-main', ['upgrade', 'pr']);
+
+    // The release workflow's `release_npm`/`release_pypi` jobs are only
+    // added by the `Release` component's own `preSynthesize()`, which runs
+    // during `project.synth()` - after this constructor returns. Patch them
+    // from a component added afterwards, so its `preSynthesize()` runs later
+    // still (component preSynthesize order follows construction order).
+    class ReleaseWorkflowCredentialPatch extends Component {
+      preSynthesize() {
+        disableCheckoutCredentialPersistence('release', ['release', 'release_npm', 'release_pypi']);
+      }
+    }
+    new ReleaseWorkflowCredentialPatch(this);
+
     this.package.setScript(
       'integ-test',
       `integ-runner --directory ./integ-tests ${integTestRegions?.map(region => `--parallel-regions ${region}`).join(' ')} --update-on-failed`,
