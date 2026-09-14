@@ -35,7 +35,7 @@ const UPSTREAM_DEFAULT_CDK_VERSION = '2.189.1';
 // SHORTCUT: both hardcoded versions require manual re-verification -- run
 // `npm view aws-cdk-lib version` and re-check awscdk-deps.d.ts's `@default`
 // periodically (it may drift on a projen upgrade).
-const DEFAULT_CDK_VERSION = '2.261.0';
+const DEFAULT_CDK_VERSION = '2.269.0';
 
 /**
  * The options for the construct
