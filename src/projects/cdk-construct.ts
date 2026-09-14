@@ -17,7 +17,7 @@ const lambdaNodeVersion = LambdaRuntime.NODEJS_24_X;
 // SHORTCUT: hardcoded cap requires manual re-verification -- run
 // `npm view @aws-cdk/integ-runner versions --json` and bump this if aws-cdk-lib
 // has released newer versions than this one.
-const LAST_INTEG_RUNNER_VERSION = '2.203.0';
+const LAST_INTEG_RUNNER_VERSION = '2.205.2';
 
 // AwsCdkConstructLibraryOptions.cdkVersion's own upstream `@default`
 // (node_modules/projen/lib/awscdk/awscdk-deps.d.ts) - what `projen new`
