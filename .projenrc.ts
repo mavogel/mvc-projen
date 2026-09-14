@@ -3,7 +3,7 @@ import { DependabotScheduleInterval, workflows } from 'projen/lib/github';
 import { NpmAccess } from 'projen/lib/javascript';
 
 // Find the latest projen version here: https://www.npmjs.com/package/projen
-const projenVersion = '0.103.20';
+const projenVersion = '0.103.23';
 // jsii is tilde-pinned (patch-only) for compiler compatibility - see
 // upgrade-jsii workflow below for why it needs its own bump automation.
 const jsiiVersion = '~6.0.0';
