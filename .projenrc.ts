@@ -6,7 +6,7 @@ import { NpmAccess } from 'projen/lib/javascript';
 const projenVersion = '0.103.23';
 // jsii is tilde-pinned (patch-only) for compiler compatibility - see
 // upgrade-jsii workflow below for why it needs its own bump automation.
-const jsiiVersion = '~6.0.0';
+const jsiiVersion = '~6.0.14';
 const dependencies = [
   `projen@^${projenVersion}`, // DO not move the index 0 to another position!
   'constructs@^10.5.1',
