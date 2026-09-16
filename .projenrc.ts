@@ -334,7 +334,7 @@ addSelfUpgradeWorkflow({
   name: 'jsii',
   checkName: 'Check for a newer jsii version (same major)',
   checkRun: [
-    'current=$(grep -oP "const jsiiVersion = .~\\K[^\']+" .projenrc.ts)',
+    'current=$(grep -oP "^const jsiiVersion = .~\\K[^\']+" .projenrc.ts)',
     'major=$(echo "$current" | cut -d. -f1)',
     'latest=$(npm view "jsii@${major}" version --json | jq -r ".[-1]")',
     'echo "current=$current" >> "$GITHUB_OUTPUT"',
