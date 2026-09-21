@@ -13,7 +13,7 @@ import (
 	projen     "github.com/projen/projen-go/projen/jsii"
 )
 
-//go:embed mavogel-mvc-projen-0.0.43.tgz
+//go:embed mavogel-mvc-projen-0.0.44.tgz
 var tarball []byte
 
 // Initialize loads the necessary packages in the @jsii/kernel to support the enclosing module.
@@ -24,5 +24,5 @@ func Initialize() {
 	projen.Initialize()
 
 	// Load this library into the kernel
-	_jsii_.Load("@mavogel/mvc-projen", "0.0.43", tarball)
+	_jsii_.Load("@mavogel/mvc-projen", "0.0.44", tarball)
 }
