@@ -459,7 +459,13 @@ scaffoldTest?.addJob('scaffold', {
         'SCRATCH=$(mktemp -d)',
         'cd "$SCRATCH"',
         'npm init -y >/dev/null',
-        'npm install "$TARBALL" typescript@^6.0.2 ts-node projen constructs',
+        // projen is deliberately not listed: it is a peer dependency of the
+        // tarball, so npm resolves it within the tarball's declared range.
+        // An unpinned `projen` here installs the registry's latest, and once
+        // that leaves the range (e.g. 0.104 vs ^0.103) npm nests a second
+        // copy under @mavogel/mvc-projen, which the scaffold's own
+        // `npm install` then deletes mid-synth.
+        'npm install "$TARBALL" typescript@^6.0.2 ts-node constructs',
         // ts-node needs a tsconfig.json in scope, or it silently no-ops
         // instead of compiling/running .projenrc.ts.
         'cat > tsconfig.json <<\'TSCONFIG\'',

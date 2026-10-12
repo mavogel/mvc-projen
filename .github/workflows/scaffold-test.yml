@@ -38,7 +38,7 @@ jobs:
           SCRATCH=$(mktemp -d)
           cd "$SCRATCH"
           npm init -y >/dev/null
-          npm install "$TARBALL" typescript@^6.0.2 ts-node projen constructs
+          npm install "$TARBALL" typescript@^6.0.2 ts-node constructs
           cat > tsconfig.json <<'TSCONFIG'
           {
             "compilerOptions": {
