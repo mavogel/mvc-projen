@@ -43,6 +43,7 @@ jobs:
         run: |-
           sed -i "s/const jsiiVersion = '~.*';/const jsiiVersion = '~${NEW_VERSION}';/" .projenrc.ts
           npx projen
+          npx projen
       - name: Build
         id: build
         if: ${{ steps.check.outputs.current != steps.check.outputs.latest }}

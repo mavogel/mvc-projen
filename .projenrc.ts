@@ -284,7 +284,13 @@ function addSelfUpgradeWorkflow(opts: SelfUpgradeWorkflowOptions) {
           // this point - only `npm install` can update it.
           CI: 'false',
         },
-        run: [opts.bumpSed, 'npx projen'].join('\n'),
+        // `npx projen` runs twice: the first synth still executes under the
+        // OLD projen, so it only installs the new one. The second synth runs
+        // under the new projen, which can change generated devDependencies
+        // (e.g. 0.104 moved commit-and-tag-version) - and only this
+        // `npm install` pass (CI=false) updates the lock file for them
+        // before the Build step's `npm ci`.
+        run: [opts.bumpSed, 'npx projen', 'npx projen'].join('\n'),
       },
       {
         name: 'Build',
