@@ -42,6 +42,7 @@ jobs:
         run: |-
           sed -i "s/const LAST_INTEG_RUNNER_VERSION = '.*';/const LAST_INTEG_RUNNER_VERSION = '${NEW_VERSION}';/" src/projects/cdk-construct.ts
           npx projen
+          npx projen
       - name: Build
         id: build
         if: ${{ steps.check.outputs.current != steps.check.outputs.latest }}
