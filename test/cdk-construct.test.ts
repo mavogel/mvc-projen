@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { synthSnapshot } from 'projen/lib/util/synth';
 import { MvcCdkConstructLibrary, MvcCdkConstructLibraryOptions } from '../src';
 
@@ -136,5 +138,26 @@ describe('alpha package version capping', () => {
     // integ-tests-alpha and awslint only publish at .0 patch versions
     expect(devDeps['@aws-cdk/integ-tests-alpha']).toEqual(`${farFutureCdkVersion}-alpha.0`);
     expect(devDeps.awslint).toEqual(`${farFutureCdkVersion}-alpha.0`);
+  });
+});
+describe('release toolchain consistency in generated projects', () => {
+  test('defaults the projen devDependency to the range mvc-projen itself requires, and lets projenVersion override it', () => {
+    // Two diverging projen copies (the generated project's and mvc-projen's own) break
+    // synthesis and release, so the default must follow mvc-projen's own peer range.
+    const ownProjenRange = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).peerDependencies.projen;
+
+    const byDefault = synthSnapshot(new MvcCdkConstructLibrary(minimalMvcCdkConstructLibraryOptions));
+    expect(byDefault['package.json'].devDependencies.projen).toEqual(ownProjenRange);
+
+    const overridden = synthSnapshot(new MvcCdkConstructLibrary({
+      ...minimalMvcCdkConstructLibraryOptions,
+      projenVersion: '^0.1.0',
+    }));
+    expect(overridden['package.json'].devDependencies.projen).toEqual('^0.1.0');
+  });
+
+  test('adds a direct conventional-changelog-conventionalcommits 10.x devDependency so commit-and-tag-version 13 does not load the 9.x hoisted from commitlint', () => {
+    const snap = synthSnapshot(new MvcCdkConstructLibrary(minimalMvcCdkConstructLibraryOptions));
+    expect(snap['package.json'].devDependencies['conventional-changelog-conventionalcommits']).toMatch(/^\^10\./);
   });
 });
