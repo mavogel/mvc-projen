@@ -37,6 +37,15 @@ const UPSTREAM_DEFAULT_CDK_VERSION = '2.189.1';
 // periodically (it may drift on a projen upgrade).
 const DEFAULT_CDK_VERSION = '2.273.0';
 
+// The `projen` range mvc-projen itself requires. A generated project must use
+// the same range for its own `projen` devDependency: otherwise npm installs a
+// second, nested `projen` under mvc-projen, and synthesis (diverging class
+// declarations, TS2322) and `projen release` (builtin task resolution) break
+// as soon as an upgrade moves mvc-projen's range past the project's.
+const OWN_PROJEN_RANGE: string = JSON.parse(
+  fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'),
+).peerDependencies.projen;
+
 /**
  * The options for the construct
  */
@@ -308,6 +317,8 @@ add tools or links which inspired you
       // applied after ...options so the DEFAULT_CDK_VERSION fallback above
       // always wins over an undefined options.cdkVersion
       cdkVersion,
+      // an explicit options.projenVersion still wins
+      projenVersion: options.projenVersion ?? OWN_PROJEN_RANGE,
     });
 
     // TypeScript 6 no longer auto-discovers @types/* packages
@@ -372,6 +383,13 @@ add tools or links which inspired you
       '@commitlint/config-conventional@^20.0.0',
       `awslint@${alphaVersion}-alpha.0`,
       'husky@^9.1.7',
+      // commit-and-tag-version 13 loads its changelog preset through the root-level
+      // conventional-changelog-preset-loader, which resolves the *hoisted*
+      // conventional-changelog-conventionalcommits. @commitlint/config-conventional
+      // can pull a 9.x into that slot, which shadows commit-and-tag-version's own 10.x
+      // and breaks `projen release` ("headerPartial is not a function"). A direct 10.x
+      // dependency takes the root slot (commitlint keeps its own 9.x nested).
+      'conventional-changelog-conventionalcommits@^10.4.0',
     );
 
     this.package.setScript('prepare', 'husky');
