@@ -35,7 +35,7 @@ const UPSTREAM_DEFAULT_CDK_VERSION = '2.189.1';
 // SHORTCUT: both hardcoded versions require manual re-verification -- run
 // `npm view aws-cdk-lib version` and re-check awscdk-deps.d.ts's `@default`
 // periodically (it may drift on a projen upgrade).
-const DEFAULT_CDK_VERSION = '2.273.0';
+const DEFAULT_CDK_VERSION = '2.274.0';
 
 // The `projen` range mvc-projen itself requires. A generated project must use
 // the same range for its own `projen` devDependency: otherwise npm installs a
